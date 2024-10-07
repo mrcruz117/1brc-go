@@ -6,7 +6,7 @@ package main
 
 import (
 	"bufio"
-	// "fmt"
+	"fmt"
 	"io"
 	"os"
 	"sort"
@@ -40,7 +40,8 @@ func base_case(inputPath string, output io.Writer) error {
 		if err != nil {
 			return err
 		}
-
+		// fmt.Println("station: ", station)
+		// fmt.Println("temp: ", temp)
 		s, ok := stationStats[station]
 		if !ok {
 			s.min = temp
@@ -54,23 +55,23 @@ func base_case(inputPath string, output io.Writer) error {
 			s.count++
 		}
 		stationStats[station] = s
-	}
 
+	}
 	stations := make([]string, 0, len(stationStats))
 	for station := range stationStats {
 		stations = append(stations, station)
 	}
 	sort.Strings(stations)
 
-	// fmt.Fprint(output, "{")
-	// for i, station := range stations {
-	// 	if i > 0 {
-	// 		fmt.Fprint(output, ", ")
-	// 	}
-	// 	s := stationStats[station]
-	// 	mean := s.sum / float64(s.count)
-	// 	fmt.Fprintf(output, "%s=%.1f/%.1f/%.1f", station, s.min, mean, s.max)
-	// }
-	// fmt.Fprint(output, "}\n")
+	fmt.Fprint(output, "{")
+	for i, station := range stations {
+		if i > 0 {
+			fmt.Fprint(output, ", ")
+		}
+		s := stationStats[station]
+		mean := s.sum / float64(s.count)
+		fmt.Fprintf(output, "%s=%.1f/%.1f/%.1f", station, s.min, mean, s.max)
+	}
+	fmt.Fprint(output, "}\n")
 	return nil
 }
