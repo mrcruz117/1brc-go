@@ -1,16 +1,19 @@
 // r2: implimenting go routines to run the solution in parallel
 // 10m rows in ~482.45ms
+// 1b rows in ~1m4.06s
+
 package main
 
 import (
 	"bufio"
-	// "fmt"
+	"fmt"
 	"io"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type stats struct {
@@ -39,6 +42,8 @@ func r2(inputPath string, output io.Writer) error {
 	)
 
 	// Read the file and divide it into chunks
+	scanStart := time.Now()
+
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 		if len(lines) >= chunkSize {
@@ -53,7 +58,9 @@ func r2(inputPath string, output io.Writer) error {
 	if len(lines) > 0 {
 		chunkList = append(chunkList, lines)
 	}
-
+	scanEnd := time.Since(scanStart)
+	fmt.Fprintf(os.Stderr, "scanned in %s\n",
+		scanEnd)
 	// Channel to collect results from goroutines
 	results := make(chan map[string]stats, len(chunkList))
 
@@ -62,6 +69,8 @@ func r2(inputPath string, output io.Writer) error {
 	semaphore := make(chan struct{}, maxGoroutines)
 
 	var wg sync.WaitGroup
+	routineStart := time.Now()
+
 	for _, chunk := range chunkList {
 		wg.Add(1)
 		semaphore <- struct{}{} // Acquire a token
@@ -81,8 +90,12 @@ func r2(inputPath string, output io.Writer) error {
 		wg.Wait()
 		close(results)
 	}()
+	routineEnd := time.Since(routineStart)
+	fmt.Fprintf(os.Stderr, "routineed in %s\n",
+		routineEnd)
 
 	// Aggregate results from all goroutines
+	aggStart := time.Now()
 	stationStats := make(map[string]stats)
 	for localStats := range results {
 		for station, s := range localStats {
@@ -98,6 +111,9 @@ func r2(inputPath string, output io.Writer) error {
 		}
 	}
 
+	aggEnd := time.Since(aggStart)
+	fmt.Fprintf(os.Stderr, "aggregated in %s\n",
+		aggEnd)
 	// Output the results
 	stations := make([]string, 0, len(stationStats))
 	for station := range stationStats {

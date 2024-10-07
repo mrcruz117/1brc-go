@@ -15,7 +15,7 @@ import (
 
 type revisionFunc func(string, io.Writer) error
 
-var revisionFuncs = []revisionFunc{base_case, r2}
+var revisionFuncs = []revisionFunc{base_case, r2, r3}
 
 var maxGoroutines int
 
