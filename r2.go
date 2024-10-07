@@ -1,88 +1,145 @@
+// r2: implimenting go routines to run the solution in parallel
+// 10m rows in ~482.45ms
 package main
 
 import (
 	"bufio"
-	"fmt"
+	// "fmt"
 	"io"
 	"os"
-
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 )
 
-type Stats struct {
-	Total   int
-	Success int
-	Failure int
+type stats struct {
+	min, max, sum float64
+	count         int64
 }
 
-func processChunk(lines []string, results chan<- Stats, wg *sync.WaitGroup, sem chan struct{}) {
-	defer wg.Done()
-	defer func() { <-sem }() // Ensure semaphore is released
-
-	var stats Stats
-	for _, line := range lines {
-		stats.Total++
-		if strings.Contains(line, "success") {
-			stats.Success++
-		} else if strings.Contains(line, "failure") {
-			stats.Failure++
-		}
-	}
-	results <- stats
-}
-
-func mergeStats(results <-chan Stats, finalStats *Stats, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for stats := range results {
-		finalStats.Total += stats.Total
-		finalStats.Success += stats.Success
-		finalStats.Failure += stats.Failure
-	}
-}
+// var maxGoroutines int = 4 // Adjust this based on your machine's capabilities
 
 func r2(inputPath string, output io.Writer) error {
-	file, err := os.Open(inputPath)
+	// Open the input file
+	f, err := os.Open(inputPath)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer f.Close()
 
-	var lines []string
-	scanner := bufio.NewScanner(file)
+	// Prepare to read the file
+	scanner := bufio.NewScanner(f)
+
+	// Variables for chunk processing
+	var (
+		chunkSize = 150000 // Adjust based on memory and performance
+		lines     []string
+		chunkList [][]string
+	)
+
+	// Read the file and divide it into chunks
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
+		if len(lines) >= chunkSize {
+			chunkList = append(chunkList, lines)
+			lines = nil
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-
-	chunkSize := (len(lines) + maxGoroutines - 1) / maxGoroutines
-	results := make(chan Stats, maxGoroutines)
-	var finalStats Stats
-
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, maxGoroutines)
-
-	for i := 0; i < len(lines); i += chunkSize {
-		end := i + chunkSize
-		if end > len(lines) {
-			end = len(lines)
-		}
-		wg.Add(1)
-		sem <- struct{}{}
-		go processChunk(lines[i:end], results, &wg, sem)
+	// Add any remaining lines as the last chunk
+	if len(lines) > 0 {
+		chunkList = append(chunkList, lines)
 	}
 
-	wg.Add(1)
-	go mergeStats(results, &finalStats, &wg)
+	// Channel to collect results from goroutines
+	results := make(chan map[string]stats, len(chunkList))
 
-	wg.Wait()
-	close(results)
+	// Limit the number of concurrent goroutines
 
-	fmt.Fprintf(output, "Total: %d\n", finalStats.Total)
-	fmt.Fprintf(output, "Success: %d\n", finalStats.Success)
-	fmt.Fprintf(output, "Failure: %d\n", finalStats.Failure)
+	semaphore := make(chan struct{}, maxGoroutines)
 
+	var wg sync.WaitGroup
+	for _, chunk := range chunkList {
+		wg.Add(1)
+		semaphore <- struct{}{} // Acquire a token
+
+		// Process each chunk in a goroutine
+		go func(lines []string) {
+			defer wg.Done()
+			defer func() { <-semaphore }() // Release the token
+
+			localStats := processChunk(lines)
+			results <- localStats
+		}(chunk)
+	}
+
+	// Close the results channel when all goroutines are done
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Aggregate results from all goroutines
+	stationStats := make(map[string]stats)
+	for localStats := range results {
+		for station, s := range localStats {
+			if aggStat, exists := stationStats[station]; exists {
+				aggStat.min = min(aggStat.min, s.min)
+				aggStat.max = max(aggStat.max, s.max)
+				aggStat.sum += s.sum
+				aggStat.count += s.count
+				stationStats[station] = aggStat
+			} else {
+				stationStats[station] = s
+			}
+		}
+	}
+
+	// Output the results
+	stations := make([]string, 0, len(stationStats))
+	for station := range stationStats {
+		stations = append(stations, station)
+	}
+	sort.Strings(stations)
+
+	// fmt.Fprint(output, "{")
+	// for i, station := range stations {
+	// 	if i > 0 {
+	// 		fmt.Fprint(output, ", ")
+	// 	}
+	// 	s := stationStats[station]
+	// 	mean := s.sum / float64(s.count)
+	// 	fmt.Fprintf(output, "%s=%.1f/%.1f/%.1f", station, s.min, mean, s.max)
+	// }
+	//  fmt.Fprint(output, "}\n")
 	return nil
+}
+
+// Process a chunk of lines and return local statistics
+func processChunk(lines []string) map[string]stats {
+	localStats := make(map[string]stats)
+	for _, line := range lines {
+		station, tempStr, hasSemi := strings.Cut(line, ";")
+		if !hasSemi {
+			continue
+		}
+		temp, err := strconv.ParseFloat(tempStr, 64)
+		if err != nil {
+			continue
+		}
+		s, exists := localStats[station]
+		if !exists {
+			s = stats{min: temp, max: temp, sum: temp, count: 1}
+		} else {
+			s.min = min(s.min, temp)
+			s.max = max(s.max, temp)
+			s.sum += temp
+			s.count++
+		}
+		localStats[station] = s
+	}
+	return localStats
 }
