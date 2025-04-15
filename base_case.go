@@ -1,6 +1,7 @@
 // r1: simple, idiomatic Go using bufio.Scanner and strconv.ParseFloat
 //
 // ~1.04s for 10M rows
+// ~2m 7s for 1B rows
 
 package main
 
